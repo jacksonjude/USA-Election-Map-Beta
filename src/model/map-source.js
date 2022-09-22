@@ -91,7 +91,7 @@ class MapSource
           textData = self.textMapData
         }
         if (textData == null) { resolve(false); return }
-        self.rawMapData = self.convertCSVToArray(self, textData)
+        self.rawMapData = await self.convertCSVToArray(self, textData)
       }
 
       if (self.rawMapData == null) { resolve(false); return }
@@ -160,65 +160,88 @@ class MapSource
         }
       }
 
-      $("#loader").show()
-      $.get(self.dataURL, null, function(data) {
-        $("#loader").hide()
+      createCSVParsingIndicator(downloadIndicatorColor)
+      $.ajax({
+        xhr: () => {
+          var xhr = new window.XMLHttpRequest();
 
-        CSVDatabase.insertFile(self.id, data)
-        resolve(data)
-      }, "text").fail(function() {
-        $("#loader").hide()
+          xhr.addEventListener("progress", function(evt) {
+            if (evt.lengthComputable) {
+              let percentComplete = evt.loaded / evt.total
+              updateCSVParsingIndicator(percentComplete)
+            }
+          }, false)
 
-        resolve(null)
+          return xhr
+        },
+        type: 'GET',
+        url: self.dataURL,
+        data: {},
+        success: (data) => {
+          hideCSVParsingIndicator()
+
+          CSVDatabase.insertFile(self.id, data)
+          resolve(data)
+        },
+        fail: () => {
+          hideCSVParsingIndicator()
+
+          resolve(null)
+        }
       })
     })
 
     return fetchMapDataPromise
   }
 
-  convertCSVToArray(self, strData)
+  async convertCSVToArray(self, strData)
   {
-    let finalArray = {}
+    let csvTextSize = new Blob([strData]).size
+    const chunkSize = 1*1024*1024
+    let chunkPercentage = chunkSize/csvTextSize
 
-    const columnDelimiter = /,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/
-    const rowDelimiter = "\n"
+    let shouldDisplayIndicator = chunkPercentage < 0.5
 
-    let rowSplitStringArray = strData.split(rowDelimiter)
-    let fieldKeys = []
-    for (let rowNum in rowSplitStringArray)
-    {
-      if (rowSplitStringArray[rowNum] == "") { continue }
+    shouldDisplayIndicator && createCSVParsingIndicator(csvParseIndicatorColor)
 
-      let rowDataArray = {}
-      let columnSplitStringArray = rowSplitStringArray[rowNum].split(columnDelimiter)
-      for (let columnNum in columnSplitStringArray)
-      {
-        if (columnSplitStringArray[columnNum] != null)
-        {
-          columnSplitStringArray[columnNum] = columnSplitStringArray[columnNum].replace("\r", "").replaceAll('\"', "")
-        }
-        if (rowNum == 0)
-        {
-          fieldKeys.push(columnSplitStringArray[columnNum])
-        }
-        else
-        {
-          rowDataArray[fieldKeys[columnNum]] = columnSplitStringArray[columnNum]
-        }
-      }
+    let csvReadPromise = new Promise(resolve => {
+      let chunkOn = 1
+      let unsortedData = []
 
-      if (rowNum > 0)
-      {
-        let rowModelDate = new Date(rowDataArray[self.columnMap.date])
-        if (!finalArray[rowModelDate.getTime()])
-        {
-          finalArray[rowModelDate.getTime()] = []
-        }
-        finalArray[rowModelDate.getTime()].push(rowDataArray)
-      }
-    }
+      Papa.parse(strData, {
+        header: true,
+        worker: true,
+        skipEmptyLines: true,
+        complete: () => {
+          let finalArray = {}
 
-    return finalArray
+          for (let rowDataArray of unsortedData)
+          {
+            let rowModelDate = new Date(rowDataArray[self.columnMap.date])
+            if (!finalArray[rowModelDate.getTime()])
+            {
+              finalArray[rowModelDate.getTime()] = []
+            }
+            finalArray[rowModelDate.getTime()].push(rowDataArray)
+          }
+
+          shouldDisplayIndicator && hideCSVParsingIndicator()
+
+          resolve(finalArray)
+        },
+        chunk: (chunkResults) => {
+          unsortedData.push(...chunkResults.data)
+          chunkOn += 1
+
+          let percentageDone = chunkPercentage*chunkOn
+          if (percentageDone > 1) percentageDone = 1
+          shouldDisplayIndicator && updateCSVParsingIndicator(percentageDone)
+        },
+        chunkSize: chunkSize
+      })
+    })
+
+    return csvReadPromise
   }
 
   setTextMapData(textData, self)
@@ -505,7 +528,7 @@ class MapSource
       this.candidateNameToPartyIDMap = invertObject(candidateNames)
     }
     this.textMapData = this.convertArrayToCSV(this.mapData, this.columnMap, this.regionNameToIDMap, this.candidateNameToPartyIDMap, this.convertMapDataRowToCSVFunction)
-    this.rawMapData = this.convertCSVToArray(this, this.textMapData)
+    this.rawMapData = null
   }
 
   convertArrayToCSV(mapData, columnMap, regionNameToID, candidateNameToPartyIDs, convertMapDataRowToCSVFunction)
@@ -3590,14 +3613,20 @@ function createHouseMapSources()
           greatestMarginPartyID = Math.sign(topTwoMargin) == 1 ? democraticPartyID : republicanPartyID
           greatestMarginCandidateName = politicalParties[greatestMarginPartyID].getNames()[0]
           topTwoMargin = Math.abs(topTwoMargin)
-
-          console.log(regionID, topTwoMargin, mapRow[netPartyMarginColumn])
         }
         else if (voteshareSortedCandidateData[0].voteshare != 0)
         {
           greatestMarginPartyID = voteshareSortedCandidateData[0].partyID
           greatestMarginCandidateName = voteshareSortedCandidateData[0].candidate
-          topTwoMargin = voteshareSortedCandidateData[0].voteshare - (voteshareSortedCandidateData[1] ? voteshareSortedCandidateData[1].voteshare : 0)
+          if (candidateArray.length == 1)
+          {
+            topTwoMargin = 101
+          }
+          else
+          {
+            topTwoMargin = voteshareSortedCandidateData[0].voteshare - (voteshareSortedCandidateData[1] ? voteshareSortedCandidateData[1].voteshare : 0)
+            topTwoMargin = topTwoMargin == 0 ? 100 : topTwoMargin
+          }
         }
         else
         {
@@ -3782,7 +3811,15 @@ function createHouseMapSources()
 
             greatestMarginPartyID = topCandidateData[0].partyID
             greatestMarginCandidateName = topCandidateData[0].candidate
-            topTwoMargin = topCandidateData[0].voteshare - (topCandidateData[1] ? topCandidateData[1].voteshare : 0)
+            if (!isCustomMap && Object.keys(candidateData).length == 1)
+            {
+              topTwoMargin = 101
+            }
+            else
+            {
+              topTwoMargin = topCandidateData[0].voteshare - (topCandidateData[1] ? topCandidateData[1].voteshare : 0)
+              topTwoMargin = !isCustomMap && topTwoMargin == 0 ? 100 : topTwoMargin
+            }
           }
           else
           {

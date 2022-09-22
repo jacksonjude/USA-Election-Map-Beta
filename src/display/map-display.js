@@ -64,6 +64,13 @@ const initialKeyPressDelay = 500
 const zoomKeyPressDelayForHalf = 3000
 const maxDateSliderTicks = 55
 
+var progressCircleDiv
+const progressCircleDuration = 100
+var lastIndicatorCircleProgress
+
+const downloadIndicatorColor = '#3498db'
+const csvParseIndicatorColor = '#3ac635'
+
 const ViewingState = {
   viewing: 0,
   zooming: 1,
@@ -192,6 +199,7 @@ async function reloadForNewMapType(initialLoad)
   $("#helpbox").html(currentMapType.getControlsHelpHTML())
 
   $("#loader").hide()
+  $("#loader-circle-container").hide()
   resizeElements(false)
 
   populateRegionsArray()
@@ -510,6 +518,19 @@ function addDivEventListeners()
     }, 200)
   })
 
+  $("#charttooltipcontainer").on('show', function() {
+    $(this).show()
+    $(this).css('opacity', "1")
+  })
+
+  $("#charttooltipcontainer").on('hide', function() {
+    $(this).css('opacity', "0")
+
+    setTimeout(function() {
+      if ($("#charttooltipcontainer").css('opacity') == "0") { $("#charttooltipcontainer").hide() }
+    }, 200)
+  })
+
   $("#mapCloseButton").hover(function() {
     $("#mapCloseButtonImage").attr('src', "./assets/close-icon-hover.png")
   }, function() {
@@ -600,6 +621,39 @@ function loadDataMap(shouldSetToMax, forceDownload, previousDateOverride, resetC
   })
 
   return loadDataMapPromise
+}
+
+function createCSVParsingIndicator(color)
+{
+  if (progressCircleDiv)
+  {
+    progressCircleDiv.destroy()
+  }
+
+  progressCircleDiv = new ProgressBar.Circle('#loader-circle-container', {
+    color: color,
+    strokeWidth: 15,
+  })
+
+  $("#loader-circle-container").show()
+}
+
+function updateCSVParsingIndicator(progress)
+{
+  if (lastIndicatorCircleProgress && progress-lastIndicatorCircleProgress < 0.01) return
+
+  progressCircleDiv.set(progress)
+  progressCircleDiv.setText(Math.round(progress*100) + "%")
+
+  lastIndicatorCircleProgress = progress
+}
+
+function hideCSVParsingIndicator()
+{
+  lastIndicatorCircleProgress = null
+
+  progressCircleDiv.set(0)
+  $("#loader-circle-container").hide()
 }
 
 function setDataMapDateSliderRange(shouldSetToMax, sliderDivID, sliderTickDivID, mapDates, previousDate)
@@ -1126,6 +1180,8 @@ async function toggleEditing(stateToSet)
 
     $("#fillDropdownContainer").css('display', "block")
 
+    $("#regionboxcontainer").css('pointer-events', "")
+
     var currentMapIsCustom = (currentMapSource.isCustom())
     var currentMapDataForDate = currentSliderDate ? currentMapSource.getMapData()[currentSliderDate.getTime()] : displayRegionDataArray
     currentCustomMapSource.updateMapData(currentMapDataForDate, getCurrentDateOrToday(), !currentMapIsCustom, currentMapSource.getCandidateNames(getCurrentDateOrToday()), !currentMapIsCustom ? currentEditingMode : null)
@@ -1170,6 +1226,8 @@ async function toggleEditing(stateToSet)
     $("#shiftDropdownContainer").hide()
 
     $("#fillDropdownContainer").css('display', "none")
+
+    $("#regionboxcontainer").css('pointer-events', "none")
 
     if (currentMapSource.isCustom())
     {
@@ -2003,11 +2061,7 @@ function updateRegionBoxYPosition(mouseY)
   var newRegionBoxYPos = (mouseY+5) || (currentMouseY+5)
   if (!newRegionBoxYPos) { return }
 
-  var regionBoxHeightDifference = $(document).height() - (newRegionBoxYPos+$("#regionboxcontainer").height())
-  if (regionBoxHeightDifference < 0)
-  {
-    newRegionBoxYPos += regionBoxHeightDifference
-  }
+  newRegionBoxYPos = correctOverflow(newRegionBoxYPos, $("#regionboxcontainer").height(), $(document).height())
   $("#regionboxcontainer").css("top", newRegionBoxYPos)
 }
 
