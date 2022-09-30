@@ -204,6 +204,8 @@ async function reloadForNewMapType(initialLoad)
   $("#loader-circle-container").hide()
   resizeElements(false)
 
+  $("#mapCloseButton").hide()
+
   populateRegionsArray()
   for (let partyID of dropdownPoliticalPartyIDs)
   {
@@ -875,7 +877,7 @@ async function displayDataMap(dateIndex, reloadPartyDropdowns, fadeForNewSVG)
 
   if (currentRegionID && currentEditingState == EditingState.viewing)
   {
-    updateRegionBox(currentRegionID)
+    updateRegionBox()
   }
 
   if (currentViewingState == ViewingState.zooming)
@@ -1054,7 +1056,7 @@ function clearMap(fullClear, shouldResetCurrentMapSource)
   updateTotalsPieChart()
   if (currentRegionID != null)
   {
-    updateRegionBox(currentRegionID)
+    updateRegionBox()
   }
 
   $("#dataMapDateSliderContainer").hide()
@@ -1144,7 +1146,7 @@ async function toggleEditing(stateToSet)
   voteshareEditRegion = null
   selectedVoteshareCandidate = null
 
-  updateRegionBox(currentRegionID)
+  updateRegionBox()
 
   if (stateToSet == null)
   {
@@ -1240,7 +1242,7 @@ async function toggleEditing(stateToSet)
 
     if (showingDataMap && currentRegionID)
     {
-      updateRegionBox(currentRegionID)
+      updateRegionBox()
     }
 
     selectAllParties()
@@ -1428,7 +1430,7 @@ function shiftClickRegion()
   else if (isDiscreteRegion && currentMapType.getID() == USAPresidentialMapType.getID() && currentViewingState == ViewingState.viewing && currentMapSource.isCustom())
   {
     editingRegionEVs = !editingRegionEVs
-    updateRegionBox(currentRegionID)
+    updateRegionBox()
   }
 }
 
@@ -1797,7 +1799,7 @@ function getCurrentDateOrToday()
   return dateToUse
 }
 
-async function updateRegionBox(regionID)
+async function updateRegionBox(regionID = currentRegionID)
 {
   let currentMapDataForDate = currentSliderDate && currentMapSource.getMapData() ? currentMapSource.getMapData()[currentSliderDate.getTime()] : null
   let canZoomCurrently = await currentMapSource.canZoom(currentMapDataForDate)
@@ -1813,7 +1815,7 @@ async function updateRegionBox(regionID)
   }
   $("#regionboxcontainer").trigger('show')
 
-  var formattedRegionID = (getKeyByValue(mapRegionNameToID, currentRegionID) || currentRegionID)
+  var formattedRegionID = (getKeyByValue(mapRegionNameToID, regionID) || regionID)
   if (currentMapSource.getFormattedRegionName)
   {
     formattedRegionID = currentMapSource.getFormattedRegionName(formattedRegionID)
@@ -2119,7 +2121,7 @@ function toggleRegionMarginEditing()
 
   if (editingRegionMarginValue)
   {
-    updateRegionBox(currentRegionID)
+    updateRegionBox()
   }
   else
   {
@@ -2173,7 +2175,7 @@ function toggleRegionVoteshareEditing(regionID, regionData)
   {
     voteshareEditRegion = baseRegionID
     updateRegionBoxPosition(currentMouseX, currentMouseY)
-    updateRegionBox(currentRegionID)
+    updateRegionBox()
   }
   else
   {
